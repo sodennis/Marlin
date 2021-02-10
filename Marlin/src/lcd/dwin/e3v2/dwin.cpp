@@ -1258,6 +1258,10 @@ void HMI_Move_Z() {
   bool printer_busy() { return planner.movesplanned() || printingIsActive(); }
 
   void HMI_Zoffset() {
+    /*
+     * If you reset the EEPROM, make sure to auto-home the printer before
+     * adjusting for the Z Offset.
+     */
     ENCODER_DiffState encoder_diffState = Encoder_ReceiveAnalyze();
     if (encoder_diffState != ENCODER_DIFF_NO) {
       uint8_t zoff_line;
@@ -1268,6 +1272,17 @@ void HMI_Move_Z() {
       if (Apply_Encoder(encoder_diffState, HMI_ValueStruct.offset_value)) {
         EncoderRate.enabled = false;
         #if HAS_BED_PROBE
+          // Prior this change when the printer turns on, dwin_zoffset and last_zoffset 
+          // are both initialized to 0 by default. If someone pressed enter without changing the value,
+          // the Z Offset is reset to 0 even though the Z Offset is already set correct.
+          // When the Z Offset is resetted, it doesn't move the nozzle back to the original height.
+          // It is very easy for someone to damage the nozzle or the bed by setting the same value again
+          // by mistake. This is bad UX.
+          //
+          // The following fixes the bad UX:
+          // By reading HMI_ValueStruct.offset_value, which is populated by the EEPROM or 0.
+          // If someone press Enter without changing the value, the Z Offset is set to the same value.
+          dwin_zoffset = HMI_ValueStruct.offset_value / 100.0f;  
           probe.offset.z = dwin_zoffset;
           TERN_(EEPROM_SETTINGS, settings.save());
         #endif
@@ -1284,8 +1299,19 @@ void HMI_Move_Z() {
       }
       NOLESS(HMI_ValueStruct.offset_value, (Z_PROBE_OFFSET_RANGE_MIN) * 100);
       NOMORE(HMI_ValueStruct.offset_value, (Z_PROBE_OFFSET_RANGE_MAX) * 100);
-      last_zoffset = dwin_zoffset;
-      dwin_zoffset = HMI_ValueStruct.offset_value / 100.0f;
+      // Prior this change when the printer turns on, dwin_zoffset and last_zoffset 
+      // are both initialized to 0 by default. If someone turns the knob after
+      // turning on the printer for the first time and there is already an non-zero
+      // Z offset, babystepping will move the nozzle by the same Z offset.
+      // This potentially damages the bed and the nozzle if the nozzle is already leveled
+      // to the bed. Because of this bad UX design, it is very easy to damage the bed or the nozzle.
+
+      // The following fixes the bad UX design:
+      // If the printer is turned on for the first time, last_zoffset 
+      // will be first initialized to the the EEPROM value. (dwin_zoffset is 0 when the printer
+      // is turned on for the first time.) Subsequent dwin_zoffset will be non-zero.
+      last_zoffset = dwin_zoffset == 0 ? HMI_ValueStruct.offset_value / 100.0f : dwin_zoffset;
+      dwin_zoffset = HMI_ValueStruct.offset_value / 100.0f; 
       #if EITHER(BABYSTEP_ZPROBE_OFFSET, JUST_BABYSTEP)
         if ( (ENABLED(BABYSTEP_WITHOUT_HOMING) || all_axes_known()) && (ENABLED(BABYSTEP_ALWAYS_AVAILABLE) || printer_busy()) )
           babystep.add_mm(Z_AXIS, dwin_zoffset - last_zoffset);
@@ -3143,7 +3169,15 @@ void HMI_Info() {
   if (encoder_diffState == ENCODER_DIFF_ENTER) {
     #if HAS_ONESTEP_LEVELING
       checkkey = Control;
-      select_control.set(CONTROL_CASE_INFO);
+      // Render the first page of the control menu.
+      // Because `Draw_Control_Menu()` does not take into
+      // account that the menu is more than one page,
+      // it can get into an invalid state.
+      // Reset to the first page for now.
+      // Ideally this should bring you back to the `Info`
+      // option.
+      select_control.reset();
+      index_control = MROWS;
       Draw_Control_Menu();
     #else
       select_page.set(3);
