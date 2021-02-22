@@ -1564,7 +1564,7 @@ void HMI_StepXYZE() {
     }
     // Step limit
     if (WITHIN(HMI_flag.step_axis, X_AXIS, E_AXIS))
-      NOMORE(HMI_ValueStruct.Max_Step, default_axis_steps_per_unit[HMI_flag.step_axis] * 2 * MINUNITMULT);
+      NOMORE(HMI_ValueStruct.Max_Step, default_axis_steps_per_unit[HMI_flag.step_axis] * 8 * MINUNITMULT);
     NOLESS(HMI_ValueStruct.Max_Step, MIN_STEP);
     // Step value
     DWIN_Draw_FloatValue(true, true, 0, font8x16, Color_White, Select_Color, 3, 1, 210, MBASE(select_step.now), HMI_ValueStruct.Max_Step);
